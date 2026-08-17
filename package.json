@@ -1,0 +1,15 @@
+{
+  "name": "coupon-automation",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local Chrome coupon verification agent using Playwright/CDP and Ollama.",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "test:connection": "node src/test-connection.js"
+  },
+  "dependencies": {
+    "playwright": "^1.62.1"
+  }
+}
