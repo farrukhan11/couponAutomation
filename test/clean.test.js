@@ -44,7 +44,7 @@ const BAD = [
   '2026-08-20', '2006-2026', '2000S', '256-BIT', '20TH', '91-7997443334',
   '10GBPSFASTSERVERS', '15MULTILOGINS', 'P2PALLOWED', 'NOCODENEEDED', 'NOCUPONREQUIRED', '3SIMILARDISCOUNTS',
   'LOCALIZATION', '1DAYLEFT', '2DAYSLEFT', '18USESTODAY', '7OFFERSVALIDATED',
-  '1-800-530-9133', '800-555-0199'
+  '1-800-530-9133', '800-555-0199', '1-800-Contacts', '1-800Accountant', 'B990DC2B', 'WELCOME9P94BMD8'
 ];
 
 test('all known-good coupon codes pass isLikelyCode', () => {
@@ -85,4 +85,22 @@ test('isLikelyCode rejects brand-name tokens when provided', () => {
   assert.strictEqual(isLikelyCode('MGRILLS10', tokens), true, 'real code must survive');
   assert.strictEqual(isLikelyCode('WELCOME10', tokens), true, 'real code must survive');
   assert.strictEqual(isLikelyCode('WELCOME10'), true, 'no tokens = unchanged behavior');
+});
+
+test('isLikelyCode rejects lowercase brand tokens (case-insensitive, scraper sync bug)', () => {
+  const tokens = ['hernest.com', 'hernest'];
+  assert.strictEqual(isLikelyCode('HERNEST', tokens), false, 'uppercase code vs lowercase token');
+  assert.strictEqual(isLikelyCode('Hernest', tokens), false);
+  assert.strictEqual(isLikelyCode('HERNEST15', tokens), false, 'token + digits');
+  assert.strictEqual(isLikelyCode('HE10', tokens), true, 'short prefix must survive');
+});
+
+test('isLikelyCode rejects toll-free prefixes and hex tracking ids', () => {
+  for (const c of ['1-800-Contacts', '1-800Accountant', '1-800-Flowers', '800-Flowers']) {
+    assert.strictEqual(isLikelyCode(c), false, `should reject toll-free ${c}`);
+  }
+  for (const c of ['B990DC2B', '7AD8A2D2', 'C6679714']) {
+    assert.strictEqual(isLikelyCode(c), false, `should reject hex tracking id ${c}`);
+  }
+  assert.strictEqual(isLikelyCode('WELCOME9P94BMD8'), false, 'welcome+tracking suffix');
 });

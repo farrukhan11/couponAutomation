@@ -21,7 +21,7 @@ const NOISE_SET = new Set([
 ]);
 
 const DATE_RE = /^(?:\d{1,2})?(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\d{4}$/i;
-const HEX_HASH_RE = /^[0-9a-f]{12,}$/i;
+const HEX_HASH_RE = /^[0-9a-f]{8,}$/i;
 
 const START_WORD_BLOCK = /^(seeless|seemore|readmore|getdeal|getcode|showcode|viewcode|seecode|submit|submitcoupon|navbar|activate|display|soon|storewide|limitedtime|flexible|financing|interestfree|timeless|premium|craftsmanship|flagsconnections|flags-connections|peak|motel|amazon|bissell|dhgate|athome|shopjura|dyson|ecoflow|pharmacy|sports|contact|viewall|periodic|popular|reviews|rule|heibk|interest)/i;
 const SUBSTR_BLOCK = /(interestedusers|current|expired|verified|verification|recorded|confirmation|checkout|interested|ago$|partnersince|trusted|vape|printing|printer|product|stores?|days$|shipping|codes?$|scout|undefined|items|comments|alloffers|offers?\d|couponcodes|promotions?|printables|proofshot|within24|savenow|getoffer|sendto|myemail|paystoshare|reviews|readall|updated|facebook|twitter|timesused|expires|codes\d|deals\d|lumens|watts?|battery|batteries|usb|mah|ampere|voltage|singapore|servers?|logins?|allowed|needed|required|similar)/i;
@@ -38,8 +38,10 @@ const YEAR_DECADE_RE = /^\d{4}s$/i;
 const ORDINAL_RE = /^\d+th$/i;
 const BIT_RE = /^\d+-bit$/i;
 const PHONE_RE = /^\d{2,3}-\d{7,}$/;
+const TOLLFREE_RE = /^\d{1,3}(-\d{3})?-?[A-Za-z]/;
 const PHONE_MULTI_RE = /^(?:\d{1,4}-){2,}\d{1,4}$/;
 const UI_COUNTER_RE = /^\d+(days?left|usestoday|offersvalidated)$/i;
+const WELCOME_SUFFIX_RE = /^welcome\d+[a-z0-9]{6,}$/i;
 
 function brandRejected(m, base, brandTokens) {
   if (!Array.isArray(brandTokens) || !brandTokens.length) return false;
@@ -73,7 +75,8 @@ function isLikelyCode(code, brandTokens = []) {
   if (NOISE_WORD_RE.test(m)) return false;
   if (DURATION_RE.test(m)) return false;
   if (DATE_ISO_RE.test(m) || YEAR_RANGE_RE.test(m) || YEAR_DECADE_RE.test(m) || ORDINAL_RE.test(m) || BIT_RE.test(m) || PHONE_RE.test(m)) return false;
-  if (PHONE_MULTI_RE.test(m) || UI_COUNTER_RE.test(m)) return false;
+  if (TOLLFREE_RE.test(m) || PHONE_MULTI_RE.test(m) || UI_COUNTER_RE.test(m)) return false;
+  if (WELCOME_SUFFIX_RE.test(m)) return false;
   if (/share$/i.test(m)) return false;
   if (/^(last|undefined)$/i.test(m)) return false;
   if (/^for/i.test(m)) return false;

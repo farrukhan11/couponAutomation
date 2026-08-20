@@ -192,7 +192,7 @@ async function extractCoupons(page, brandTokens = [], filterTokens = []) {
       ]);
       const CODE_RE = /^[a-z0-9][a-z0-9\-]{3,23}$/i;
       const DATE_RE = /^(?:\d{1,2})?(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\d{4}$/i;
-      const HEX_HASH_RE = /^[0-9a-f]{12,}$/i;
+      const HEX_HASH_RE = /^[0-9a-f]{8,}$/i;
       const MONTHDAY_RE = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|july)\d{1,2}(st|nd|rd|th)$/i;
       const SUBSTR_BLOCK = /(interestedusers|current|expired|verified|verification|recorded|confirmation|checkout|interested|ago$|partnersince|trusted|vape|printing|printer|product|stores?|days$|shipping|codes?$|scout|undefined|items|comments|alloffers|offers?\d|couponcodes|promotions?|printables|proofshot|within24|savenow|getoffer|sendto|myemail|paystoshare|reviews|readall|updated|facebook|twitter|timesused|expires|codes\d|deals\d|lumens|watts?|battery|batteries|usb|mah|ampere|voltage|singapore|servers?|logins?|allowed|needed|required|similar)/i;
       const START_WORD_BLOCK = /^(seeless|seemore|readmore|getdeal|getcode|showcode|viewcode|seecode|submit|submitcoupon|navbar|activate|display|soon|storewide|limitedtime|flexible|financing|interestfree|timeless|premium|craftsmanship|flagsconnections|flags-connections|peak|motel|amazon|bissell|dhgate|athome|shopjura|dyson|ecoflow|pharmacy|sports|contact|viewall|periodic|popular|reviews|rule|heibk|interest)/i;
@@ -208,10 +208,13 @@ async function extractCoupons(page, brandTokens = [], filterTokens = []) {
       const ORDINAL_RE = /^\d+th$/i;
       const BIT_RE = /^\d+-bit$/i;
       const PHONE_RE = /^\d{2,3}-\d{7,}$/;
+      const TOLLFREE_RE = /^\d{1,3}(-\d{3})?-?[A-Za-z]/;
       const PHONE_MULTI_RE = /^(?:\d{1,4}-){2,}\d{1,4}$/;
       const UI_COUNTER_RE = /^\d+(days?left|usestoday|offersvalidated)$/i;
+      const WELCOME_SUFFIX_RE = /^welcome\d+[a-z0-9]{6,}$/i;
+      const rejectTokens = (Array.isArray(filterTokens) && filterTokens.length ? filterTokens : brandTokens) || [];
       const rejectSet = new Set(
-        (Array.isArray(filterTokens) && filterTokens.length ? filterTokens : brandTokens) || []
+        rejectTokens
           .map(t => String(t || '').trim().toUpperCase())
           .filter(t => t.length >= 3)
       );
@@ -235,7 +238,8 @@ async function extractCoupons(page, brandTokens = [], filterTokens = []) {
         if (NOISE_WORD_RE.test(s)) return false;
         if (DURATION_RE.test(s)) return false;
         if (DATE_ISO_RE.test(s) || YEAR_RANGE_RE.test(s) || YEAR_DECADE_RE.test(s) || ORDINAL_RE.test(s) || BIT_RE.test(s) || PHONE_RE.test(s)) return false;
-        if (PHONE_MULTI_RE.test(s) || UI_COUNTER_RE.test(s)) return false;
+        if (TOLLFREE_RE.test(s) || PHONE_MULTI_RE.test(s) || UI_COUNTER_RE.test(s)) return false;
+        if (WELCOME_SUFFIX_RE.test(s)) return false;
         if (/share$/i.test(s)) return false;
         if (/^(last|undefined)$/i.test(s)) return false;
         if (/^for/i.test(s)) return false;
