@@ -208,7 +208,7 @@ async function extractCoupons(page, brandTokens = [], filterTokens = []) {
       const ORDINAL_RE = /^\d+th$/i;
       const BIT_RE = /^\d+-bit$/i;
       const PHONE_RE = /^\d{2,3}-\d{7,}$/;
-      const TOLLFREE_RE = /^\d{1,3}(-\d{3})?-?[A-Za-z]/;
+      const TOLLFREE_RE = /^1-\d{3}-?[A-Za-z]|^8\d{2}-?[A-Za-z]/;
       const PHONE_MULTI_RE = /^(?:\d{1,4}-){2,}\d{1,4}$/;
       const UI_COUNTER_RE = /^\d+(days?left|usestoday|offersvalidated)$/i;
       const WELCOME_SUFFIX_RE = /^welcome\d+[a-z0-9]{6,}$/i;
