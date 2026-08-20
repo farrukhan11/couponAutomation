@@ -17,7 +17,7 @@ const NOISE_SET = new Set([
   'TRUE', 'FALSE', 'CUSTOMER', 'ONLY', 'SHOPPERSVOTED', 'CODESFOUND',
   'MARKETINGCALENDAR', 'SUBMITACOUPON', 'ALWAYSFREE', 'DESIGN2PLEASE',
   'LEARNING247', 'FURNITURE123', 'AIREA51TRAMPOLINE', 'VOTES', 'DEALS',
-  'COUPONS', 'OFFERS', 'NONE'
+  'COUPONS', 'OFFERS', 'NONE', 'LOCALIZATION'
 ]);
 
 const DATE_RE = /^(?:\d{1,2})?(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\d{4}$/i;
@@ -38,8 +38,23 @@ const YEAR_DECADE_RE = /^\d{4}s$/i;
 const ORDINAL_RE = /^\d+th$/i;
 const BIT_RE = /^\d+-bit$/i;
 const PHONE_RE = /^\d{2,3}-\d{7,}$/;
+const PHONE_MULTI_RE = /^(?:\d{1,4}-){2,}\d{1,4}$/;
+const UI_COUNTER_RE = /^\d+(days?left|usestoday|offersvalidated)$/i;
 
-function isLikelyCode(code) {
+function brandRejected(m, base, brandTokens) {
+  if (!Array.isArray(brandTokens) || !brandTokens.length) return false;
+  const upper = m.toUpperCase();
+  const baseUpper = base.toUpperCase();
+  for (const t of brandTokens) {
+    const tok = String(t || '').trim().toUpperCase();
+    if (tok.length < 3) continue;
+    if (upper === tok || baseUpper === tok) return true;
+    if (upper.startsWith(tok) && /^\d{1,4}$/.test(upper.slice(tok.length))) return true;
+  }
+  return false;
+}
+
+function isLikelyCode(code, brandTokens = []) {
   const m = String(code || '').trim().replace(/\s+/g, '');
   const base = m.replace(/^\d+/, '');
   if (!m || m.length < 4 || m.length > 17 || !CODE_RE.test(m)) return false;
@@ -58,12 +73,14 @@ function isLikelyCode(code) {
   if (NOISE_WORD_RE.test(m)) return false;
   if (DURATION_RE.test(m)) return false;
   if (DATE_ISO_RE.test(m) || YEAR_RANGE_RE.test(m) || YEAR_DECADE_RE.test(m) || ORDINAL_RE.test(m) || BIT_RE.test(m) || PHONE_RE.test(m)) return false;
+  if (PHONE_MULTI_RE.test(m) || UI_COUNTER_RE.test(m)) return false;
   if (/share$/i.test(m)) return false;
   if (/^(last|undefined)$/i.test(m)) return false;
   if (/^for/i.test(m)) return false;
   if (/^see[a-z0-9]/i.test(m)) return false;
   if (START_WORD_BLOCK.test(m)) return false;
   if (MONTHDAY_RE.test(m)) return false;
+  if (brandRejected(m, base, brandTokens)) return false;
   return true;
 }
 

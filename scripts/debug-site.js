@@ -21,7 +21,7 @@ const { brandTokens } = require('../src/collector');
   console.log('DOM counts:', JSON.stringify(info));
 
   const tokens = brandTokens('Flags Connections', 'flagsconnections.com');
-  const coupons = await extractCoupons(page, tokens, true);
+  const coupons = await extractCoupons(page, tokens);
   console.log('extractCoupons ->', coupons.length);
   console.log('codes:', coupons.map(c => c.code).join(', '));
 

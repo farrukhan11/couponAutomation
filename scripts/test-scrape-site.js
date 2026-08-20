@@ -24,15 +24,13 @@ const getFlag = name => process.argv.includes(`--${name}`);
   const { context } = await connectToLocalChrome(cdpUrl);
   const page = await context.newPage();
   const tokens = brandTokens(brand, domain);
-  const assumeBrand = tokens.some(t => String(url).toLowerCase().includes(t.toLowerCase()));
 
-  console.log(`Testing ${url}\n  brand tokens: ${tokens.join(', ')}\n  assumeBrand: ${assumeBrand}\n`);
+  console.log(`Testing ${url}\n  brand tokens: ${tokens.join(', ')}\n`);
   const t0 = Date.now();
   const result = await scrapeSite(page, url, {
     useAi,
     log: msg => console.log(`  ${msg}`),
     brandTokens: tokens,
-    assumeBrand,
     revealCap: cap
   });
   const secs = Math.round((Date.now() - t0) / 1000);

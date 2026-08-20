@@ -1,10 +1,9 @@
-const path = require('path');
 const { connectToLocalChrome } = require('./browser');
-const { generateKeywords, normalizeDomain } = require('./keywords');
+const { generateKeywords } = require('./keywords');
 const { searchOne } = require('./search');
-const { collectSites, brandTokens } = require('./collector');
+const { collectSites, brandTokens, classifySite, hostnameOf } = require('./collector');
 const { scrapeSite, withTimeout } = require('./scraper');
-const { writeCsvFiles, discountType } = require('./csv');
+const { writeCsvFiles, writeWorkbook, discountType } = require('./csv');
 const { fetchHtml, extractCodesFromHtml } = require('./htmlfetch');
 
 function getArg(name, fallback = null) {
@@ -24,11 +23,10 @@ const ts = () => `[T+${Math.round((Date.now() - t0) / 1000)}s]`;
 (async () => {
   const brand = getArg('brand', '');
   const domain = getArg('domain', '');
-  const regions = (getArg('regions', 'us,uk') || '').split(',').map(r => r.trim().toLowerCase()).filter(r => REGION_LABEL[r]);
+  const regions = (getArg('regions', 'us') || '').split(',').map(r => r.trim().toLowerCase()).filter(r => REGION_LABEL[r]);
   const pages = Number(getArg('pages', '2'));
   const delayMs = Number(getArg('delay', '2500'));
   const maxSites = Number(getArg('limit', '15'));
-  const useAi = !getFlag('no-ai');
   const includeOther = getFlag('include-other');
   const includeUnrelated = getFlag('include-unrelated');
   const cdpUrl = getArg('cdp', process.env.CDP_URL || 'http://127.0.0.1:9222');
@@ -38,13 +36,27 @@ const ts = () => `[T+${Math.round((Date.now() - t0) / 1000)}s]`;
   const htmlFirst = getFlag('html-first');
 
   if (!domain && !brand) {
-    console.error('Usage: node src/discover.js --brand="Flags Connections" --domain=flagsconnections.com [--regions=us,uk] [--pages=2] [--limit=15] [--delay=2500] [--engines=google,bing] [--no-ai] [--out=output]');
+    console.error('Usage: node src/discover.js --brand="Flags Connections" --domain=flagsconnections.com [--regions=us] [--pages=2] [--limit=15] [--delay=2500] [--engines=google,bing] [--no-ai] [--out=output]');
     process.exit(1);
   }
 
   const brandName = brand || domain;
   const keywordOverride = getArg('keyword', '');
-  const keywords = keywordOverride ? [keywordOverride] : generateKeywords(brand, domain);
+  const keywords = keywordOverride
+    ? keywordOverride.split(',').map(k => k.trim()).filter(Boolean)
+    : generateKeywords(brand, domain);
+  let useAi = !getFlag('no-ai');
+  if (useAi) {
+    const ollamaOk = await withTimeout(
+      fetch('http://127.0.0.1:11434/api/tags').then(r => r.ok).catch(() => false),
+      3000,
+      false
+    );
+    if (!ollamaOk) {
+      console.log(`${ts()} Ollama not detected on 127.0.0.1:11434 — AI reveal selection disabled (regex fallback)`);
+      useAi = false;
+    }
+  }
   const discoveredAt = new Date().toISOString();
   console.log(`${ts()} [START]`, { brand: brandName, domain, regions, pages, keywords: keywords.length, useAi, cdpUrl });
 
@@ -92,12 +104,53 @@ const ts = () => `[T+${Math.round((Date.now() - t0) / 1000)}s]`;
   }
 
   const tokens = brandTokens(brandName, domain);
+  const filterTokens = [...new Set([
+    ...tokens,
+    ...String(brandName).toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 4)
+  ])];
+  const matchesBrand = url => tokens.some(t => String(url || '').toLowerCase().includes(t));
   const sitesByRegion = collectSites(allSearchResults, domain, brandName);
   for (const region of regions) {
     const sites = sitesByRegion[region] || [];
     console.log(`\n[SITES] ${region.toUpperCase()} -> ${sites.length} unique sites (brand-matched=${sites.filter(s => s.brandMatch).length})`);
     for (const s of sites.slice(0, maxSites)) {
       console.log(`  [${s.kind}]${s.brandMatch ? ' [brand]' : ''} ${s.host} (hits=${s.hits}, ranks=${s.ranks.join(',')})`);
+    }
+  }
+
+  const searchRows = [];
+  for (const res of allSearchResults) {
+    if (res.blocked) {
+      searchRows.push({
+        region: REGION_LABEL[res.region],
+        page: res.page,
+        rank: '',
+        keyword: res.keyword,
+        engine: res.engine,
+        title: '[BLOCKED]',
+        url: '',
+        host: '',
+        kind: 'blocked',
+        brand_match: '',
+        snippet: ''
+      });
+      continue;
+    }
+    for (const r of res.results) {
+      const host = hostnameOf(r.url);
+      searchRows.push({
+        region: REGION_LABEL[res.region],
+        page: res.page,
+        rank: r.rank,
+        keyword: res.keyword,
+        engine: res.engine,
+        title: r.title,
+        url: r.url,
+        host,
+        kind: host ? classifySite(host, domain) : '',
+        brand_match: matchesBrand(r.url) ? 'yes' : '',
+        snippet: (r.snippet || '').slice(0, 300)
+      });
     }
   }
 
@@ -108,40 +161,54 @@ const ts = () => `[T+${Math.round((Date.now() - t0) / 1000)}s]`;
   for (const region of regions) {
     const sites = (sitesByRegion[region] || []).slice(0, maxSites);
     for (const site of sites) {
-      if (site.kind === 'blocked') { skipped.blocked += 1; continue; }
-      if (site.kind === 'other' && !includeOther) { skipped.other += 1; continue; }
-      if (!site.brandMatch && site.kind !== 'coupon-site' && !includeUnrelated) { skipped.unrelated += 1; continue; }
       let scraped = null;
-      if (htmlFirst && site.kind !== 'store') {
+      if (site.kind === 'blocked') {
         const html = await withTimeout(fetchHtml(site.url), 20000, null);
-        const htmlCodes = html ? extractCodesFromHtml(html) : [];
+        const htmlCodes = html ? extractCodesFromHtml(html, filterTokens) : [];
         if (htmlCodes.length > 0) {
           scraped = {
             coupons: htmlCodes.map(code => ({ code, offer: '', verified: false, expiry: '', contextBrand: site.brandMatch, siteUrl: site.url })),
             unmaskMethod: 'html'
           };
-          console.log(`${ts()} [HTML] ${site.url} -> ${htmlCodes.length} codes (no browser)`);
+          console.log(`${ts()} [HTML] ${site.url} -> ${htmlCodes.length} codes (blocked site, code scrape)`);
+        } else {
+          skipped.blocked += 1;
+          continue;
         }
-      }
-      if (!scraped) {
-        const scrapePage = await withTimeout(context.newPage(), 15000, null);
-        if (!scrapePage) continue;
-        try {
-          scraped = await withTimeout(
-            scrapeSite(scrapePage, site.url, { useAi, log: (msg) => console.log(ts(), msg), brandTokens: tokens, assumeBrand: site.brandMatch, revealCap }),
-            90000,
-            null
-          );
-          if (!scraped) {
-            console.log(`${ts()} [SCRAPE] TIMED OUT ${site.url}`);
-            continue;
+      } else {
+        if (site.kind === 'other' && !includeOther) { skipped.other += 1; continue; }
+        if (!site.brandMatch && site.kind !== 'coupon-site' && !includeUnrelated) { skipped.unrelated += 1; continue; }
+        if (htmlFirst && site.kind !== 'store') {
+          const html = await withTimeout(fetchHtml(site.url), 20000, null);
+          const htmlCodes = html ? extractCodesFromHtml(html, filterTokens) : [];
+          if (htmlCodes.length > 0) {
+            scraped = {
+              coupons: htmlCodes.map(code => ({ code, offer: '', verified: false, expiry: '', contextBrand: site.brandMatch, siteUrl: site.url })),
+              unmaskMethod: 'html'
+            };
+            console.log(`${ts()} [HTML] ${site.url} -> ${htmlCodes.length} codes (no browser)`);
           }
-        } catch (err) {
-          console.log(`${ts()} [SCRAPE] FAILED ${site.url}: ${err.message}`);
-        } finally {
-          await withTimeout(scrapePage.close(), 10000, null).catch(() => {});
         }
-        if (!scraped) continue;
+        if (!scraped) {
+          const scrapePage = await withTimeout(context.newPage(), 15000, null);
+          if (!scrapePage) continue;
+          try {
+            scraped = await withTimeout(
+              scrapeSite(scrapePage, site.url, { useAi, log: (msg) => console.log(ts(), msg), brandTokens: tokens, filterTokens, revealCap }),
+              90000,
+              null
+            );
+            if (!scraped) {
+              console.log(`${ts()} [SCRAPE] TIMED OUT ${site.url}`);
+              continue;
+            }
+          } catch (err) {
+            console.log(`${ts()} [SCRAPE] FAILED ${site.url}: ${err.message}`);
+          } finally {
+            await withTimeout(scrapePage.close(), 10000, null).catch(() => {});
+          }
+          if (!scraped) continue;
+        }
       }
       for (const c of scraped.coupons) {
           const key = `${region}:${c.code}`;
@@ -172,13 +239,23 @@ const ts = () => `[T+${Math.round((Date.now() - t0) / 1000)}s]`;
   }
   console.log(`${ts()} [SCRAPE] skipped: ${JSON.stringify(skipped)}`);
 
-  const files = writeCsvFiles({ brand: brandName, rows, outDir, discoveredAt });
+  try {
+    const xlsxPath = await writeWorkbook({ brand: brandName, rows, searchRows, outDir });
+    console.log(`Wrote: ${xlsxPath}`);
+  } catch (err) {
+    console.error(`[WARN] Workbook write failed (file locked in Excel/editor?): ${err.message}`);
+  }
+  try {
+    const files = writeCsvFiles({ brand: brandName, rows, outDir, discoveredAt });
+    for (const f of files) console.log(`Wrote: ${f}`);
+  } catch (err) {
+    console.error(`[WARN] CSV write failed (file locked in Excel/editor?): ${err.message}`);
+  }
   console.log('\n[SUMMARY]');
   console.log(`Codes found: ${seenCodes.size} (${rows.length} rows)`);
   for (const [key, sources] of seenCodes) {
     console.log(`  ${key}  (${sources.length}x)`);
   }
-  for (const f of files) console.log(`Wrote: ${f}`);
   process.exit(0);
 })().catch(err => {
   console.error('\n[FATAL]', err);

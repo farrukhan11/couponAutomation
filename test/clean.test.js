@@ -42,7 +42,9 @@ const BAD = [
   '32000LUMENS', '08-11', '30-90', 'SINGAPORE-199588',
   'LIFETIME', 'ONETIME', 'MONTHLY', 'RECURRING', '2YEARS', '15-DAY', '5-YEAR', '24-HOUR',
   '2026-08-20', '2006-2026', '2000S', '256-BIT', '20TH', '91-7997443334',
-  '10GBPSFASTSERVERS', '15MULTILOGINS', 'P2PALLOWED', 'NOCODENEEDED', 'NOCUPONREQUIRED', '3SIMILARDISCOUNTS'
+  '10GBPSFASTSERVERS', '15MULTILOGINS', 'P2PALLOWED', 'NOCODENEEDED', 'NOCUPONREQUIRED', '3SIMILARDISCOUNTS',
+  'LOCALIZATION', '1DAYLEFT', '2DAYSLEFT', '18USESTODAY', '7OFFERSVALIDATED',
+  '1-800-530-9133', '800-555-0199'
 ];
 
 test('all known-good coupon codes pass isLikelyCode', () => {
@@ -62,4 +64,25 @@ test('isLikelyCode rejects malformed inputs', () => {
   assert.strictEqual(isLikelyCode('123456'), false, 'all digits');
   assert.strictEqual(isLikelyCode('SAVE%OFF'), false, 'invalid chars');
   assert.strictEqual(isLikelyCode('THIS IS A VERY LONG CODE 12345'), false, 'too long after normalize');
+});
+
+test('isLikelyCode rejects multi-hyphen phone numbers and UI counters', () => {
+  for (const c of ['1-800-530-9133', '800-555-0199', '1-866-266-7442']) {
+    assert.strictEqual(isLikelyCode(c), false, `should reject phone ${c}`);
+  }
+  for (const c of ['1DAYLEFT', '2DAYSLEFT', '18USESTODAY', '7OFFERSVALIDATED', 'LOCALIZATION']) {
+    assert.strictEqual(isLikelyCode(c), false, `should reject UI label ${c}`);
+  }
+});
+
+test('isLikelyCode rejects brand-name tokens when provided', () => {
+  const tokens = ['monumentgrills.com', 'monumentgrills', 'monument', 'grills'];
+  assert.strictEqual(isLikelyCode('MONUMENT', tokens), false, 'exact brand word');
+  assert.strictEqual(isLikelyCode('Monument5', tokens), false, 'brand word + digits');
+  assert.strictEqual(isLikelyCode('GRILLS', tokens), false, 'exact brand word');
+  assert.strictEqual(isLikelyCode('MONUMENTGRILLS', tokens), false, 'compact brand name');
+  assert.strictEqual(isLikelyCode('MGC10', tokens), true, 'real code must survive');
+  assert.strictEqual(isLikelyCode('MGRILLS10', tokens), true, 'real code must survive');
+  assert.strictEqual(isLikelyCode('WELCOME10', tokens), true, 'real code must survive');
+  assert.strictEqual(isLikelyCode('WELCOME10'), true, 'no tokens = unchanged behavior');
 });

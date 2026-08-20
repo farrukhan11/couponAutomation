@@ -1,4 +1,6 @@
 const { waitForPageSettle } = require('./browser');
+const { chooseElement } = require('./ollama');
+const { getVisibleInteractiveSnapshot, clickAgentElement } = require('./snapshot');
 
 const REVEAL_PATTERNS = [
   /show code/i,
@@ -125,11 +127,42 @@ async function clickRevealByIndex(page, index) {
   return clicked;
 }
 
-async function extractCoupons(page, brandTokens = [], assumeBrand = false) {
+async function aiPickReveal(page) {
+  const snapshot = await withTimeout(getVisibleInteractiveSnapshot(page), 10000, null);
+  if (!snapshot || !snapshot.elements || !snapshot.elements.length) return { ok: false, broken: false };
+  const candidates = snapshot.elements.filter(el =>
+    /show|reveal|unlock|see|get|view|click|tap|code|coupon|promo|voucher/i.test(
+      `${el.text} ${el.ariaLabel} ${el.title}`.toLowerCase()
+    )
+  ).slice(0, 40);
+  if (!candidates.length) return { ok: false, broken: false };
+  let decision = null;
+  try {
+    decision = await withTimeout(
+      chooseElement(
+        'Find the best visible button or link that reveals a hidden coupon/promo code. Look for text like "Show Code", "Reveal Code", "Get Code", "See Promo Code", "Unlock Code", "Click to copy". Do NOT pick close buttons, header nav, or unrelated links.',
+        { url: snapshot.url, title: snapshot.title, elements: candidates }
+      ),
+      8000,
+      null
+    );
+  } catch (_) {
+    return { ok: false, broken: true };
+  }
+  if (!decision || decision.found !== true || !decision.elementId) return { ok: false, broken: false };
+  try {
+    await clickAgentElement(page, decision.elementId);
+  } catch (_) {
+    return { ok: false, broken: false };
+  }
+  return { ok: true, text: String(decision.reason || 'AI reveal').replace(/\s+/g, ' ').slice(0, 40) };
+}
+
+async function extractCoupons(page, brandTokens = [], filterTokens = []) {
   const data = await safeEvaluate(
     page,
     (args) => {
-      const { brandTokens, assumeBrand } = args || {};
+      const { brandTokens, filterTokens } = args || {};
       const brandRe = Array.isArray(brandTokens) && brandTokens.length
         ? new RegExp(
             brandTokens.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/-/g, '[\\- ]?')).join('|'),
@@ -155,7 +188,7 @@ async function extractCoupons(page, brandTokens = [], assumeBrand = false) {
         'TRUE', 'FALSE', 'CUSTOMER', 'ONLY', 'SHOPPERSVOTED', 'CODESFOUND',
         'MARKETINGCALENDAR', 'SUBMITACOUPON', 'ALWAYSFREE', 'DESIGN2PLEASE',
         'LEARNING247', 'FURNITURE123', 'AIREA51TRAMPOLINE', 'VOTES', 'DEALS',
-        'COUPONS', 'OFFERS', 'NONE'
+        'COUPONS', 'OFFERS', 'NONE', 'LOCALIZATION'
       ]);
       const CODE_RE = /^[a-z0-9][a-z0-9\-]{3,23}$/i;
       const DATE_RE = /^(?:\d{1,2})?(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\d{4}$/i;
@@ -175,6 +208,13 @@ async function extractCoupons(page, brandTokens = [], assumeBrand = false) {
       const ORDINAL_RE = /^\d+th$/i;
       const BIT_RE = /^\d+-bit$/i;
       const PHONE_RE = /^\d{2,3}-\d{7,}$/;
+      const PHONE_MULTI_RE = /^(?:\d{1,4}-){2,}\d{1,4}$/;
+      const UI_COUNTER_RE = /^\d+(days?left|usestoday|offersvalidated)$/i;
+      const rejectSet = new Set(
+        (Array.isArray(filterTokens) && filterTokens.length ? filterTokens : brandTokens) || []
+          .map(t => String(t || '').trim().toUpperCase())
+          .filter(t => t.length >= 3)
+      );
 
       const codeOk = rawCode => {
         const s = String(rawCode || '').trim().replace(/\s+/g, '');
@@ -195,12 +235,19 @@ async function extractCoupons(page, brandTokens = [], assumeBrand = false) {
         if (NOISE_WORD_RE.test(s)) return false;
         if (DURATION_RE.test(s)) return false;
         if (DATE_ISO_RE.test(s) || YEAR_RANGE_RE.test(s) || YEAR_DECADE_RE.test(s) || ORDINAL_RE.test(s) || BIT_RE.test(s) || PHONE_RE.test(s)) return false;
+        if (PHONE_MULTI_RE.test(s) || UI_COUNTER_RE.test(s)) return false;
         if (/share$/i.test(s)) return false;
         if (/^(last|undefined)$/i.test(s)) return false;
         if (/^for/i.test(s)) return false;
         if (/^see[a-z0-9]/i.test(s)) return false;
         if (START_WORD_BLOCK.test(s)) return false;
         if (MONTHDAY_RE.test(s)) return false;
+        const upper = s.toUpperCase();
+        const baseUpper = base.toUpperCase();
+        if (rejectSet.has(upper) || rejectSet.has(baseUpper)) return false;
+        for (const tok of rejectSet) {
+          if (upper.startsWith(tok) && /^\d{1,4}$/.test(upper.slice(tok.length))) return false;
+        }
         return true;
       };
 
@@ -260,13 +307,13 @@ async function extractCoupons(page, brandTokens = [], assumeBrand = false) {
       return collect;
     },
     20000,
-    { brandTokens, assumeBrand }
+    { brandTokens, filterTokens }
   );
   return data || [];
 }
 
 async function scrapeSite(page, siteUrl, opts = {}) {
-  const { useAi = true, log = () => {}, brandTokens = [], assumeBrand = false, revealCap = 20, noProgressLimit = 3 } = opts;
+  const { useAi = true, log = () => {}, brandTokens = [], filterTokens = null, revealCap = 20, noProgressLimit = 3 } = opts;
   log(`[SCRAPE] ${siteUrl}`);
   await withTimeout(page.goto(siteUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }), 40000, null).catch(() => {});
   await waitForPageSettle(page);
@@ -292,29 +339,45 @@ async function scrapeSite(page, siteUrl, opts = {}) {
     }
   };
 
-  addAll(await extractCoupons(page, brandTokens, assumeBrand));
+  addAll(await extractCoupons(page, brandTokens, filterTokens));
 
   let unmaskMethod = 'none';
   let revealed = 0;
   let noProgress = 0;
+  let aiBroken = false;
   // If the baseline already surfaced a very rich set, the site exposes codes in the
   // DOM (e.g. couponupto embeds the code inside the button label) and additional
   // reveal clicks add little. Otherwise, run the reveal loop.
   const richBaseline = collected.length >= 30;
   for (let i = 0; i < revealCap && !richBaseline; i++) {
     const iterDone = await withTimeout((async () => {
-      const candidates = await findRevealCandidates(page);
-      if (!candidates.length) return true;
+      let clicked = null;
 
-      let target = null;
-      for (const pattern of REVEAL_PATTERNS) {
-        target = candidates.find(c => pattern.test(c.text));
-        if (target) break;
+      if (useAi && !aiBroken) {
+        const ai = await aiPickReveal(page);
+        if (ai.ok) {
+          clicked = { text: ai.text };
+        } else if (ai.broken) {
+          aiBroken = true;
+          log('[SCRAPE]   AI reveal selection unavailable, falling back to regex');
+        }
       }
-      target = target || candidates[0];
 
-      const index = candidates.indexOf(target);
-      const clicked = await clickRevealByIndex(page, index);
+      if (!clicked) {
+        const candidates = await findRevealCandidates(page);
+        if (!candidates.length) return true;
+
+        let target = null;
+        for (const pattern of REVEAL_PATTERNS) {
+          target = candidates.find(c => pattern.test(c.text));
+          if (target) break;
+        }
+        target = target || candidates[0];
+
+        const index = candidates.indexOf(target);
+        clicked = await clickRevealByIndex(page, index);
+      }
+
       if (!clicked) {
         noProgress += 1;
         return noProgress >= noProgressLimit;
@@ -336,7 +399,7 @@ async function scrapeSite(page, siteUrl, opts = {}) {
       await page.waitForTimeout(300);
 
       const beforeSize = seen.size;
-      addAll(await extractCoupons(page, brandTokens, assumeBrand));
+  addAll(await extractCoupons(page, brandTokens, filterTokens));
       const gained = seen.size - beforeSize;
       if (gained === 0) noProgress += 1;
       else noProgress = 0;

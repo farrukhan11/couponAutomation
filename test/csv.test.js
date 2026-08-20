@@ -2,7 +2,8 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
-const { toCsv, discountType } = require('../src/csv');
+const os = require('node:os');
+const { toCsv, discountType, writeWorkbook } = require('../src/csv');
 
 const FIXTURE = path.join(__dirname, 'fixtures', 'flags_connections_coupons.csv');
 
@@ -76,4 +77,34 @@ test('discountType classifies offers', () => {
   assert.strictEqual(discountType('$5 off'), 'amount');
   assert.strictEqual(discountType('£3 discount'), 'amount');
   assert.strictEqual(discountType('free shipping'), 'unknown');
+});
+
+test('writeWorkbook writes both sheets with data', async () => {
+  const ExcelJS = require('exceljs');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coupon-wb-'));
+  try {
+    const rows = [
+      { brand: 'Test', region: 'US', query: 'q', site_name: 's', site_url: 'u', coupon_code: 'CODE10', offer: '10% off', discount_type: 'percent', verified: '', last_verified: '', expiry: '', unmask_method: 'html', relevance: 'brand', site_brand: 'yes', engine: 'google', discovered_at: '2026-01-01' },
+      { brand: 'Test', region: 'US', query: 'q', site_name: 's', site_url: 'u', coupon_code: 'SAVE20', offer: '', discount_type: 'unknown', verified: '', last_verified: '', expiry: '', unmask_method: 'none', relevance: 'unrelated', site_brand: '', engine: 'google', discovered_at: '2026-01-01' }
+    ];
+    const searchRows = [
+      { region: 'US', page: 1, rank: 1, keyword: 'k', engine: 'google', title: 't', url: 'http://u', host: 'u.com', kind: 'coupon-site', brand_match: 'yes', snippet: 's' }
+    ];
+    const file = await writeWorkbook({ brand: 'Wb Test', rows, searchRows, outDir: tmpDir });
+    assert.ok(fs.existsSync(file), 'workbook file missing');
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.readFile(file);
+    const wsSearch = wb.getWorksheet('Search Results');
+    const wsCodes = wb.getWorksheet('Coupon Codes');
+    assert.ok(wsSearch, 'Search Results sheet missing');
+    assert.ok(wsCodes, 'Coupon Codes sheet missing');
+    assert.strictEqual(wsSearch.rowCount, 2, `search sheet: expected header+1 rows, got ${wsSearch.rowCount}`);
+    assert.strictEqual(wsCodes.rowCount, 3, `codes sheet: expected header+2 rows, got ${wsCodes.rowCount}`);
+    assert.strictEqual(wsCodes.getRow(2).getCell(6).value, 'CODE10', 'coupon_code cell (row 2) missing');
+    assert.strictEqual(wsCodes.getRow(3).getCell(6).value, 'SAVE20', 'coupon_code cell (row 3) missing');
+    assert.strictEqual(wsSearch.getRow(2).getCell(4).value, 'k', 'keyword cell missing');
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 });

@@ -12,6 +12,7 @@
     "test:connection": "node src/test-connection.js"
   },
   "dependencies": {
+    "exceljs": "^4.4.0",
     "playwright": "^1.62.1"
   }
 }

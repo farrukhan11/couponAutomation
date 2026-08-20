@@ -31,13 +31,13 @@ const ATTR_RES = [
   /data-clipboard="([^"]+)"/gi
 ];
 
-function extractCodesFromHtml(html) {
+function extractCodesFromHtml(html, brandTokens = []) {
   const seen = new Set();
   const codes = [];
   const push = raw => {
     let m = String(raw || '').trim().replace(/\s+/g, '');
     m = m.replace(/(show|reveal|get|view|see|unlock)\s*(code|coupon)$/i, '').replace(/coupon$/i, '');
-    if (!m || !isLikelyCode(m)) return;
+    if (!m || !isLikelyCode(m, brandTokens)) return;
     if (seen.has(m.toUpperCase())) return;
     seen.add(m.toUpperCase());
     codes.push(m);
