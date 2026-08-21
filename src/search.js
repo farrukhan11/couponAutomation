@@ -1,4 +1,4 @@
-const { waitForPageSettle } = require('./browser');
+const { waitForPageSettle, saveSession } = require('./browser');
 
 function buildSearchUrl({ keyword, region, pageNumber = 0, engine = 'google' }) {
   const gl = region === 'uk' ? 'uk' : 'us';
@@ -183,7 +183,28 @@ async function extractOrganic(page, engine) {
   return extractGoogleOrganic(page);
 }
 
-async function searchOne({ page, keyword, region, pageNumber = 0, engine = 'google', log = () => {} }) {
+async function waitForCaptchaSolve(page, engine, captchaTimeoutMs, log) {
+  const startedAt = Date.now();
+  log(`[CAPTCHA] ${engine} blocked. Solve it manually in the open Chrome window — waiting up to ${Math.round(captchaTimeoutMs / 1000)}s...`);
+  while (Date.now() - startedAt < captchaTimeoutMs) {
+    await page.waitForTimeout(2500);
+    let stillBlocked = true;
+    try {
+      stillBlocked = await isBlocked(page, engine);
+    } catch (_) {
+      stillBlocked = true;
+    }
+    if (!stillBlocked) {
+      log('[CAPTCHA] solved — saving session cookies so it does not come back');
+      try { await saveSession(page.context()); } catch (_) {}
+      return true;
+    }
+  }
+  log('[CAPTCHA] timed out without a solve');
+  return false;
+}
+
+async function searchOne({ page, keyword, region, pageNumber = 0, engine = 'google', captchaTimeoutMs = 300000, log = () => {} }) {
   const url = buildSearchUrl({ keyword, region, pageNumber, engine });
   log(`[SEARCH] ${engine} ${region} | page ${pageNumber + 1} | "${keyword}"`);
   try {
@@ -195,7 +216,14 @@ async function searchOne({ page, keyword, region, pageNumber = 0, engine = 'goog
   await waitForPageSettle(page);
   await dismissConsent(page);
 
-  const blocked = await isBlocked(page, engine);
+  let blocked = await isBlocked(page, engine);
+  if (blocked) {
+    const solved = await waitForCaptchaSolve(page, engine, captchaTimeoutMs, log);
+    if (solved) {
+      await waitForPageSettle(page);
+      blocked = await isBlocked(page, engine);
+    }
+  }
   if (blocked) {
     log(`[SEARCH] BLOCKED ${engine} for "${keyword}"`);
     return { keyword, region, page: pageNumber + 1, engine, blocked: true, results: [] };
@@ -213,4 +241,4 @@ async function searchOne({ page, keyword, region, pageNumber = 0, engine = 'goog
   };
 }
 
-module.exports = { searchOne, buildSearchUrl, extractOrganic, isBlocked };
+module.exports = { searchOne, buildSearchUrl, extractOrganic, isBlocked, waitForCaptchaSolve };

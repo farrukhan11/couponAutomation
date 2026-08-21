@@ -1,0 +1,19 @@
+{
+  "brand": "Imalent",
+  "domain": "imalentstore.com",
+  "regions": ["us"],
+  "pages": 2,
+  "limit": 9999,
+  "engines": ["google"],
+  "keyword": "Imalent coupon code",
+  "delay": 4000,
+  "revealCap": 20,
+  "includeOther": true,
+  "includeUnrelated": false,
+  "htmlFirst": true,
+  "noAi": false,
+  "exclude": [],
+  "captchaTimeoutMs": 300000,
+  "cdp": "http://127.0.0.1:9223",
+  "outDir": "output"
+}

@@ -93,6 +93,8 @@ node src/discover.js --brand="Flags Connections" --domain=flagsconnections.com `
 | `--keyword=` | auto | Search phrase override. Comma-separate for multiple keywords, e.g. `--keyword="Monument Grills coupon code,Monument Grills promo code"`. ⚠️ Each keyword × page runs a Google search — keep it to 1–2 keywords (`--delay=4000`) to avoid rate-limiting |
 | `--delay=` | `2500` | ms between searches (4000 recommended to avoid Google blocks) |
 | `--reveal-cap=` | `20` | Max reveal-button clicks per page |
+| `--exclude=` | – | Extra noise words to reject as codes (comma-separated, brand-specific pruning), e.g. `--exclude="Nikki,Sarah"`. These are added to the reject set so `Nikki`, `Nikki10`, etc. are dropped |
+| `--captcha-timeout=` | `300000` | Seconds to wait for you to manually solve a Google captcha before giving up on that search |
 | `--include-other` | off | Also scrape brand-matched aggregator/review sites (`other` kind) |
 | `--include-unrelated` | off | Also scrape non-brand-matched sites |
 | `--html-first` | off | Try fast HTTP/HTML extraction before opening the browser |
@@ -101,6 +103,18 @@ node src/discover.js --brand="Flags Connections" --domain=flagsconnections.com `
 | `--cdp=` | `http://127.0.0.1:9222` | Chrome DevTools endpoint (use `http://127.0.0.1:9223`) |
 
 > **Coupon sites are always scraped**, even without an exact brand match in the URL (e.g. `dealszo.com/imalent-coupons`). Brand matching only gates `other`-kind sites.
+
+### Captcha pause + session reuse
+
+If Google throws a captcha/interstitial, the run **pauses** and waits (up to `--captcha-timeout`, default 5 min) for you to solve it by hand in the open Chrome window. Once solved, the browser cookies are saved to `state/session.json` and **reloaded on every later run**, so the same captcha usually does not come back. `state/` is git-ignored.
+
+### Site interstitials (age-gates, "verify you are human")
+
+When a coupon site opens behind a verification wall, the scraper first tries to dismiss it automatically, then waits (up to ~2 min) for you to clear it manually before scraping whatever is visible — it no longer just closes the tab.
+
+### Blocked-site fallbacks
+
+Sites that block the browser are not skipped. The pipeline tries, in order: direct HTML fetch → Wayback Machine (`web.archive.org`) → Jina reader (`r.jina.ai`). Anything that still yields nothing is listed under a `[NEEDS-REVIEW]` block at the end instead of being silently dropped.
 
 ### Output files & CSV columns
 
@@ -213,13 +227,15 @@ Requires Ollama + `qwen2.5:3b-instruct` for V1 only. V2 discovery does **not** n
 | **Phase 3 — HTML fast path + filter hardening** | `src/htmlfetch.js` (`--html-first`): HTTP fetch + attribute/text code extraction without a browser; filter tuned across brands (dates, durations, usernames, specs, label counters, ranges, ordinals, phone numbers, plans); `csv.js` EBUSY write retry; forum sites blocked; **22/22 tests** | ✅ Done |
 | **Phase 4 — Live brand runs** | **iMalent Store** → US 92 codes / 118 rows + UK 63 / 71 (merged 189). **FastestVPN** → 189 codes / 250 rows (final CSV overwrite blocked only by the file being open in Excel — run itself succeeded with the new filter) | 🟡 Mostly done |
 | **Phase 5 — US default, AI reveal, xlsx, hardening** | US-only default (`--regions`); comma-separated multi-keyword `--keyword`; Ollama AI reveal selection with startup auto-detect + regex fallback; `{brand}_results.xlsx` 2-sheet workbook (+ regression test); blocked sites code-scraped via HTML; page-load wait (`load` event + content polling); filter: multi-hyphen phones, UI counters, brand-name codes | ✅ Done |
+| **Phase 6 — Captcha pause, session reuse, interstitials, fallbacks** | Google captcha pauses for manual solve + saves/loads `state/session.json` cookies; site interstitials (age-gate/"verify human") auto-dismiss then manual wait; blocked-site fallbacks (HTML → Wayback → Jina) + `[NEEDS-REVIEW]` list; filter is now a single source in `clean.js` injected into the browser (no drift) + `--exclude` per-brand pruning; better headers + UA rotation; page understanding (wait-for-coupon-selector, full scroll, JSON-LD scan, broader reveal patterns); `htmlfetch` brandTokens bug fixed; **31/31 tests** | ✅ Done |
 
 ### Remaining
 
 | Item | Notes |
 |---|---|
-| **Re-run Flags Connections** (the original brand) with the new pipeline | Current `output/flags_connections_coupons.csv` is a stale 250-row snapshot from before the fixes. Re-run: `node src/discover.js --brand="Flags Connections" --domain=flagsconnections.com --regions=us --pages=2 --limit=15 --engines=google --keyword="Flags Connections coupon code" --delay=4000 --include-other --html-first --no-ai --cdp=http://127.0.0.1:9223` |
+| **Re-run Sleep & Beyond** with the hardened pipeline | Uses Ollama AI reveal (drop `--no-ai`) + the new noise rules. Re-run: `node src/discover.js --brand="Sleep & Beyond" --domain=sleepandbeyond.com --regions=us --pages=2 --limit=15 --engines=google --keyword="Sleep & Beyond coupon code" --delay=4000 --include-other --html-first --exclude="Nikki,Sarah" --cdp=http://127.0.0.1:9223` |
+| **Re-run Flags Connections** (the original brand) with the new pipeline | Current `output/flags_connections_coupons.csv` is a stale 250-row snapshot from before the fixes. Re-run: `node src/discover.js --brand="Flags Connections" --domain=flagsconnections.com --regions=us --pages=2 --limit=15 --engines=google --keyword="Flags Connections coupon code" --delay=4000 --include-other --html-first --cdp=http://127.0.0.1:9223` |
 | **Close CSV files before re-running** | FastestVPN final write needs the files closed in Excel/VS Code (retry now waits ~12s) |
-| **Filter tuning for new brands** | Each new brand may expose new noise patterns — run, review the summary, add targeted rules to `clean.js` + the inlined copy in `scraper.js`, extend `test/clean.test.js`, keep `npm test` green |
+| **Filter tuning for new brands** | Each new brand may expose new noise patterns — run, review the summary, then either add a generic rule to `clean.js` (auto-applied in the browser too, since it's a single source) or pass brand-specific words via `--exclude="..."`. Extend `test/clean.test.js`, keep `npm test` green |
 | **Optional: V1 integration** | Feed scraped codes into the V1 checkout tester — currently out of scope |
 | **Optional: more engines** | DuckDuckGo fallback is implemented but disabled by default (`--engines=google,ddg`) |

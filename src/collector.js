@@ -67,44 +67,31 @@ function collectSites(searchResults, brandDomain, brandName = '') {
   for (const res of searchResults) {
     if (!res || res.blocked) continue;
     const region = res.region;
-    if (!sitesByRegion[region]) sitesByRegion[region] = new Map();
+    if (!sitesByRegion[region]) sitesByRegion[region] = [];
 
     for (const r of res.results) {
       if (!r.url) continue;
       const host = hostnameOf(r.url);
       if (!host) continue;
-      const key = host;
-      if (!sitesByRegion[region].has(key)) {
-        sitesByRegion[region].set(key, {
-          host,
-          root: rootDomain(host),
-          name: siteLabel(r.url),
-          url: r.url,
-          kind: classifySite(host, brandDomain),
-          brandMatch: false,
-          engines: new Set(),
-          queries: [],
-          hits: 0,
-          ranks: []
-        });
-      }
-      const site = sitesByRegion[region].get(key);
-      if (matchesBrand(r.url) && !site.brandMatch) {
-        site.brandMatch = true;
-        site.url = r.url;
-      }
-      site.queries.push(res.keyword);
-      site.engines.add(res.engine || 'google');
-      site.hits += 1;
-      site.ranks.push(r.rank);
+      const site = {
+        host,
+        root: rootDomain(host),
+        name: siteLabel(r.url),
+        url: r.url,
+        kind: classifySite(host, brandDomain),
+        brandMatch: matchesBrand(r.url),
+        engine: res.engine || 'google',
+        query: res.keyword,
+        rank: r.rank
+      };
+      sitesByRegion[region].push(site);
     }
   }
 
   const out = {};
-  for (const [region, map] of Object.entries(sitesByRegion)) {
-    out[region] = [...map.values()]
-      .map(s => ({ ...s, engines: [...s.engines], queries: [...new Set(s.queries)], ranks: [...new Set(s.ranks)].sort((a, b) => a - b) }))
-      .sort((a, b) => b.brandMatch - a.brandMatch || b.hits - a.hits || a.ranks[0] - b.ranks[0]);
+  for (const [region, sites] of Object.entries(sitesByRegion)) {
+    out[region] = sites
+      .sort((a, b) => b.brandMatch - a.brandMatch || a.rank - b.rank);
   }
   return out;
 }

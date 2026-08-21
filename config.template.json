@@ -1,0 +1,41 @@
+# Brand 1 - Wubenlight
+@{
+  brand = "Wubenlight"
+  domain = "wubenlight.com"
+  regions = @("us")
+  pages = 2
+  limit = 9999
+  engines = @("google")
+  keyword = "Wubenlight coupon code"
+  delay = 4000
+  revealCap = 20
+  includeOther = $true
+  includeUnrelated = $false
+  htmlFirst = $true
+  noAi = $false
+  exclude = @()
+  captchaTimeoutMs = 300000
+  cdp = "http://127.0.0.1:9223"
+  outDir = "output"
+} | ConvertTo-Json -Depth 10 | Set-Content configs\wubenlight.json
+
+# Brand 2 - Imalent
+@{
+  brand = "Imalent"
+  domain = "imalentstore.com"
+  regions = @("us")
+  pages = 2
+  limit = 9999
+  engines = @("google")
+  keyword = "Imalent coupon code"
+  delay = 4000
+  revealCap = 20
+  includeOther = $true
+  includeUnrelated = $false
+  htmlFirst = $true
+  noAi = $false
+  exclude = @()
+  captchaTimeoutMs = 300000
+  cdp = "http://127.0.0.1:9223"
+  outDir = "output"
+} | ConvertTo-Json -Depth 10 | Set-Content configs\imalent.json

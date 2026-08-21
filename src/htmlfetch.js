@@ -1,15 +1,36 @@
 const { isLikelyCode } = require('./clean');
 
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+const UA_LIST = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:127.0) Gecko/20100101 Firefox/127.0'
+];
+let uaIdx = 0;
+const nextUa = () => UA_LIST[uaIdx++ % UA_LIST.length];
 
-async function fetchHtml(url, timeoutMs = 15000) {
+async function fetchHtml(url, timeoutMs = 15000, referer = 'https://www.google.com/') {
   try {
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': UA,
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9'
-      },
+    const headers = {
+      'User-Agent': nextUa(),
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9'
+    };
+    if (referer) headers.Referer = referer;
+    const res = await fetch(url, { headers, redirect: 'follow', signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) return null;
+    const html = await res.text();
+    if (!html || html.length < 500) return null;
+    return html;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function fetchViaWayback(url, timeoutMs = 20000) {
+  try {
+    const res = await fetch(`https://web.archive.org/web/2id_/${url}`, {
+      headers: { 'User-Agent': nextUa() },
       redirect: 'follow',
       signal: AbortSignal.timeout(timeoutMs)
     });
@@ -17,6 +38,21 @@ async function fetchHtml(url, timeoutMs = 15000) {
     const html = await res.text();
     if (!html || html.length < 500) return null;
     return html;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function fetchViaJina(url, timeoutMs = 25000) {
+  try {
+    const res = await fetch(`https://r.jina.ai/${url}`, {
+      headers: { 'User-Agent': nextUa(), Accept: 'text/plain' },
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+    if (!res.ok) return null;
+    const text = await res.text();
+    if (!text || text.length < 300) return null;
+    return text;
   } catch (_) {
     return null;
   }
@@ -58,7 +94,7 @@ function extractCodesFromHtml(html, brandTokens = []) {
   for (const t of tokens) {
     let m = t.trim().replace(/\s+/g, '');
     m = m.replace(/(show|reveal|get|view|see|unlock)\s*(code|coupon)$/i, '').replace(/coupon$/i, '');
-    if (!m || !isLikelyCode(m)) continue;
+    if (!m || !isLikelyCode(m, brandTokens)) continue;
     if (!/\d/.test(m)) continue;
     push(m);
   }
@@ -66,4 +102,4 @@ function extractCodesFromHtml(html, brandTokens = []) {
   return codes.slice(0, 200);
 }
 
-module.exports = { fetchHtml, extractCodesFromHtml };
+module.exports = { fetchHtml, fetchViaWayback, fetchViaJina, extractCodesFromHtml };

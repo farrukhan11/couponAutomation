@@ -1,4 +1,35 @@
+const fs = require('fs');
+const path = require('path');
 const { chromium } = require('playwright');
+
+function defaultStatePath() {
+  return path.join(process.cwd(), 'state', 'session.json');
+}
+
+async function saveSession(context, filePath = defaultStatePath()) {
+  try {
+    const state = await context.storageState();
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(state, null, 2), 'utf8');
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function loadSession(context, filePath = defaultStatePath()) {
+  try {
+    if (!fs.existsSync(filePath)) return false;
+    const state = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    if (state.cookies && state.cookies.length) {
+      await context.addCookies(state.cookies);
+      return true;
+    }
+    return false;
+  } catch (_) {
+    return false;
+  }
+}
 
 async function connectToLocalChrome(cdpUrl = 'http://127.0.0.1:9222') {
   const browser = await chromium.connectOverCDP(cdpUrl);
@@ -32,4 +63,4 @@ async function waitForPageSettle(page, timeout = 15000) {
   await page.waitForTimeout(900);
 }
 
-module.exports = { connectToLocalChrome, waitForPageSettle };
+module.exports = { connectToLocalChrome, waitForPageSettle, saveSession, loadSession };

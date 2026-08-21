@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { isLikelyCode } = require('../src/clean');
+const { isLikelyCode, makeCodeOk, buildRejectSet } = require('../src/clean');
 
 const GOOD = [
   'ADBUW', 'ADBUO', 'ADBUI', 'ADBUU', 'ADBUT', 'ADBUY', 'ADBUE', 'ADBUR', 'ADBUP', 'ADBUQ',
@@ -103,4 +103,30 @@ test('isLikelyCode rejects toll-free prefixes and hex tracking ids', () => {
     assert.strictEqual(isLikelyCode(c), false, `should reject hex tracking id ${c}`);
   }
   assert.strictEqual(isLikelyCode('WELCOME9P94BMD8'), false, 'welcome+tracking suffix');
+});
+
+test('isLikelyCode rejects sleepandbeyond noise batch (views, labels, nav words)', () => {
+  const bad = ['list', 'left', 'mapbox', 'VIEWOFFER', '0Views', '4Views', 'Coupons6', '1personusedthis'];
+  const accepted = bad.filter(c => isLikelyCode(c));
+  assert.deepStrictEqual(accepted, [], `noise wrongly accepted: ${accepted.join(', ')}`);
+});
+
+test('real sleepandbeyond codes survive the new rules', () => {
+  const good = ['SB250', 'SBL2021', 'MOTHER15', 'SABI10', 'CPT10', 'MMA10', 'PLD10', 'PENNYPETITE10', 'THANKS25', 'HEALTHYCHILD10', 'SBHARMONY10'];
+  const rejected = good.filter(c => !isLikelyCode(c));
+  assert.deepStrictEqual(rejected, [], `real codes wrongly rejected: ${rejected.join(', ')}`);
+});
+
+test('makeCodeOk serializes and re-creates for browser injection', () => {
+  const factory = new Function('return ' + makeCodeOk.toString())();
+  const codeOk = factory(buildRejectSet(['hernest', 'hernest.com']));
+  assert.strictEqual(codeOk('SAVE10'), true, 'real code survives injected filter');
+  assert.strictEqual(codeOk('0Views'), false, 'views counter rejected by injected filter');
+  assert.strictEqual(codeOk('HERNEST'), false, 'brand token rejected by injected filter');
+  assert.strictEqual(codeOk('HERNEST15'), false, 'brand token + digits rejected by injected filter');
+});
+
+test('buildRejectSet uppercases and drops short tokens', () => {
+  const out = buildRejectSet(['abc', 'ab', '  XyZ  ', '']);
+  assert.deepStrictEqual(out, ['ABC', 'XYZ']);
 });

@@ -52,13 +52,16 @@ test('collectSites does NOT brand-match unrelated host', () => {
   assert.strictEqual(sites.uk[0].kind, 'blocked');
 });
 
-test('collectSites dedupes by host and aggregates hits/ranks', () => {
+test('collectSites keeps all results without hostname deduplication', () => {
   const results = [
     { keyword: 'k1', region: 'us', engine: 'ddg', blocked: false, results: [{ rank: 1, title: 'a', url: 'https://www.dealdrop.com/x', snippet: '' }] },
     { keyword: 'k2', region: 'us', engine: 'google', blocked: false, results: [{ rank: 3, title: 'a', url: 'https://dealdrop.com/y', snippet: '' }] }
   ];
   const sites = collectSites(results, 'flagsconnections.com', 'Flags Connections');
-  assert.strictEqual(sites.us.length, 1);
-  assert.strictEqual(sites.us[0].hits, 2);
-  assert.deepStrictEqual(sites.us[0].ranks, [1, 3]);
+  // Same host (dealdrop.com) appears twice with different keywords/ranks -> both kept
+  assert.strictEqual(sites.us.length, 2);
+  assert.strictEqual(sites.us[0].rank, 1);
+  assert.strictEqual(sites.us[1].rank, 3);
+  assert.strictEqual(sites.us[0].engine, 'ddg');
+  assert.strictEqual(sites.us[1].engine, 'google');
 });
